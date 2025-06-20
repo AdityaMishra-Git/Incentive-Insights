@@ -2,7 +2,10 @@ import datetime
 import os.path
 
 from resources.dev import config
+from resources.dev.config import sales_team_data_mart_partitioned_local_file
+from src.main.delete.local_file_delete import delete_local_file
 from src.main.read.database_read import *
+from src.main.transformations.jobs.customer_mart_sql_tranform_write import customer_mart_calculation_table_write
 from src.main.upload.upload_to_s3 import UploadToS3
 from src.main.utility.encrypt_decrypt import *
 from src.main.utility.s3_client_object import *
@@ -15,10 +18,10 @@ import shutil
 from src.main.move.move_files import *
 from src.main.transformations.jobs.dimension_tables_join import *
 from src.main.write.parquet_writer import *
-
+from src.test.sales_data_upload_s3 import local_file_path
+from src.main.transformations.jobs.sales_mart_sql_transform_write import sales_mart_calculation_table_write
 ############################### GET S3 client ###########################
 aws_access_key = config.aws_access_key
-# aws_access_key = ""
 aws_secret_key = config.aws_secret_key
 
 s3_client_provider = S3ClientProvider(decrypt(aws_access_key), decrypt(aws_secret_key))
@@ -30,9 +33,12 @@ print(response)
 logger.info("list of buckets: %s", response['Buckets'])
 
 # Check if local directory already has the file, if file is present then check if same file is present in the
-# staging area with active status, if so thn don't delete the file rather try rerunning, else give an error
+# staging area with active status (active status se pata chalega ki kahi na kahi beech me process fail ho gaya),
+# if so thn don't delete the file rather try rerunning, else give an error
 # and don't process the next file
 
+# abhi tak Aws se file download nahi kari hai, abhi check kar rahe hai ki kahi purane run me koi porcess to fail nahi
+# hui thi jiske karan koi file local pe reh gai ho
 csv_files = [file for file in os.listdir(config.local_directory) if file.endswith(".csv")]
 connection = get_mysql_connection()
 cursor = connection.cursor()
@@ -111,6 +117,9 @@ else:
     logger.error("There is no data to process")
     raise Exception("There is no data to process")
 
+####### make csv lines convert to comma seperated #########
+# csv_files = str(csv_files)[1:-1] # possible in linux
+
 logger.info("*************** LISTING THE FILES **************")
 logger.info("List of CSV files that need to be processed %s", csv_file)
 logger.info("*************** CREATING SPARK SESSION ***************")
@@ -136,6 +145,7 @@ for data in csv_file:
 logger.info(f"****** List of Correct Files ****** {correct_files}")
 logger.info(f"****** List of error Files ****** {error_file}")
 logger.info(f"****** Moving Error data to error directory, IF ANY ****** ")
+
 # Move data to error directory on local
 Error_folder_local_path = config.error_folder_path_local
 
@@ -156,9 +166,9 @@ if error_file:
 else:
     logger.info("****** THERE ARE NO ERROR FILES AVAILABLE IN OUR DATASET ******")
 
-# Need to take care of additional columns
-# first determine extra columns
-# but before running the process staging table needs to be updated as active(A) or inactive(I)
+# # Need to take care of additional columns
+# # first determine extra columns
+# # but before running the process staging table needs to be updated as active(A) or inactive(I)
 
 logger.info(f"****** Updating product_staging_table, that we have begin the process ******")
 insert_statements = []
@@ -205,6 +215,7 @@ schema = StructType([
 # logger.info("****** CREATING EMPTY DATAFRAME ******")
 # final_df_to_process = database_client.create_dataframe(spark, "empty_df_create_table")
 # final_df_to_process.show()
+
 final_df_to_process = spark.createDataFrame([], schema=schema)
 
 # CREATE A NEW COLUMN WITH CONCATENATED VALUES OF EXTRA COLUMNS
@@ -290,23 +301,105 @@ s3_uploader = UploadToS3(s3_client)
 s3_directory = config.s3_customer_datamart_directory
 message = s3_uploader.upload_to_s3(s3_directory, config.bucket_name, config.customer_data_mart_local_file)
 logger.info(f"{message}")
-#
-# # Sales_team_data_mart
-# logger.info("****** WRITE DATA INTO SALES TEAM DATA MART ******")
-# final_sales_team_data_mart_df = s3_customer_store_sales_df_join\
-#     .select("store_id", "sales_person_id", "sales_person_first_name", "sales_person_last_name",
-#             "store_manager_name", "manager_id", "is_manager", "sales_person_address", "sales_person_pincode",
-#             "sales_date", "total_cost", expr("SUBSTRING(sales_date,1,7) as sales_month"))
-#
-# logger.info("****** FINAL DATA FOR SALES TEAM DATA MART ******")
-# final_sales_team_data_mart_df.show()
-#
-# parquet_writer.dataframe_writer(final_sales_team_data_mart_df, config.sales_team_data_mart_local_file)
-#
-# logger.info(f"****** CUSTOMER DATA WRITTEN ON LOCAL DISK AT {config.sales_team_data_mart_local_file}")
-#
-# # Move Data on S3 Bucket for sales_data_mart
-# logger.info("****** DATA MOVEMENT FROM LOCAL TO S3 FOR SALES DATA MART ******")
-# s3_directory = config.s3_sales_datamart_directory
-# message = s3_uploader.upload_to_s3(s3_directory, config.bucket_name, config.sales_team_data_mart_local_file)
-# logger.info(f"{message}")
+
+# Sales_team_data_mart
+logger.info("****** WRITE DATA INTO SALES TEAM DATA MART ******")
+final_sales_team_data_mart_df = s3_customer_store_sales_df_join\
+    .select("store_id", "sales_person_id", "sales_person_first_name", "sales_person_last_name",
+            "store_manager_name", "manager_id", "is_manager", "sales_person_address", "sales_person_pincode",
+            "sales_date", "total_cost", expr("SUBSTRING(sales_date,1,7) as sales_month"))
+
+logger.info("****** FINAL DATA FOR SALES TEAM DATA MART ******")
+final_sales_team_data_mart_df.show()
+
+parquet_writer.dataframe_writer(final_sales_team_data_mart_df, config.sales_team_data_mart_local_file)
+
+logger.info(f"****** SALES TEAM DATA WRITTEN ON LOCAL DISK AT {config.sales_team_data_mart_local_file}")
+
+# Move Data on S3 Bucket for sales_data_mart
+logger.info("****** DATA MOVEMENT FROM LOCAL TO S3 FOR SALES DATA MART ******")
+s3_directory = config.s3_sales_datamart_directory
+message = s3_uploader.upload_to_s3(s3_directory, config.bucket_name, config.sales_team_data_mart_local_file)
+logger.info(f"{message}")
+
+# Also writing data into partitions
+final_sales_team_data_mart_df.write.format("parquet")\
+    .option("header","true")\
+    .mode("overwrite")\
+    .partitionBy("sales_month","store_id")\
+    .option("path",config.sales_team_data_mart_partitioned_local_file)\
+    .save()
+
+# Move data on S3 for partitioned folder
+s3_prefix = "sales_partitioned_data_mart"
+current_epoch = int(datetime.datetime.now().timestamp()) * 1000
+for root,dirs, files in os.walk(config.sales_team_data_mart_partitioned_local_file):
+    for file in files:
+        print(file)
+        local_file_path = os.path.join(root,file)
+        relative_file_path = os.path.relpath(local_file_path,config.sales_team_data_mart_partitioned_local_file)
+        s3_key = f"{s3_prefix}/{current_epoch}/{relative_file_path}"
+        s3_client.upload_file(local_file_path, config.bucket_name, s3_key)
+
+# calculation for customer_data_mart
+# find out customer total purchase every month
+# write data into MySql table
+logger.info("********** CALCULATING CUSTOMER EVERY MONTH PURCHASE AMOUNT **********")
+customer_mart_calculation_table_write(final_customer_data_mart_df)
+logger.info("********** CALCULATION OF CUSTOMER MART DONE AND WRITTEN TO TABLE **********")
+
+# calculation for sales_team_mart
+# find out total sales done by each sales person every month
+# give only the top performer a incentive of 1% of total monthly sales
+# write data into MySql table
+
+logger.info("********** CALCULATING SALES AMOUNT FOR EVERY MONTH **********")
+sales_mart_calculation_table_write(final_sales_team_data_mart_df)
+logger.info("********** CALCULATION OF SALES DATA MART DONE AND WRITTEN TO TABLE **********")
+
+##########################################    LAST STEP     #################################################
+# Move the file on S3 and delete the local folder since processing is complete
+source_prefix = config.s3_source_directory
+destination_prefix = config.s3_processed_directory
+message = move_s3_to_s3(s3_client, config.bucket_name, source_prefix,destination_prefix)
+logger.info(f"{message}")
+
+logger.info(" *********** Deleting sales data from local *********** ")
+delete_local_file(config.local_directory)
+logger.info(" *********** Deleted sales data from local *********** ")
+
+logger.info(" *********** Deleting customer data from local *********** ")
+delete_local_file(config.customer_data_mart_local_file)
+logger.info(" *********** Deleted customer data from local *********** ")
+
+logger.info(" *********** Deleting sales team data from local *********** ")
+delete_local_file(config.sales_team_data_mart_local_file)
+logger.info(" *********** Deleted sales team data from local *********** ")
+
+logger.info(" *********** Deleting sales team data partitioned from local *********** ")
+delete_local_file(config.sales_team_data_mart_partitioned_local_file)
+logger.info(" *********** Deleted sales team data partitioned from local *********** ")
+
+#update the status of staging table
+update_statements = []
+if correct_files:
+    for file in correct_files:
+        filename = os.path.basename(file)
+        statements = f"UPDATE {db_name}.{config.product_staging_table}" \
+                     f" SET status = 'I', updated_date='{formatted_date}' "\
+                     f"WHERE file_name = '{filename}' "
+        update_statements.append(statements)
+        logger.info(f"Updated statement created for staging table --- {update_statements}")
+        logger.info("******** Connecting with My SQL server ********")
+        connection = get_mysql_connection()
+        cursor = connection.cursor()
+        logger.info("******** MySQL server connected successfully ***************")
+        for statement in update_statements:
+            cursor.execute(statement)
+            connection.commit()
+        cursor.close()
+        connection.close()
+else:
+    logger.error("********* There is some error in process in between **********")
+    sys.exit()
+
