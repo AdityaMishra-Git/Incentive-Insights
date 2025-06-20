@@ -1,7 +1,5 @@
 Welcome to the show. This endeavor aims to provide you with insights into the functioning of projects within a real-time environment.
 
-Disclaimer: This project is originally by Manish Kumar. I implemented and executed it myself by following his YouTube playlist.
-
 ```plaintext
 Project structure:-
 my_project/
@@ -61,7 +59,6 @@ How to run the program in Pycharm:-
 2. Upload or pull the project from GitHub.
 3. Open terminal from bottom pane.
 4. Goto virtual environment and activate it. Let's say you have venv as virtual environament.i) cd venv ii) cd Scripts iii) activate (if activate doesn't work then use ./activate)
-5. Create main.py as explained in my videos on YouTube channel.
-6. You will have to create a user on AWS also and assign s3 full access and provide secret key and access key to the config file.
+5. You will have to create a user on AWS also and assign s3 full access and provide secret key and access key to the config file.
 6. Run main.py from green play button on top right hand side.
 7. If everything works as expected enjoy, else re-try.
