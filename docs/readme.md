@@ -1,6 +1,5 @@
 Welcome to the show. This endeavor aims to provide you with insights into the functioning of projects within a real-time environment.
 
-```plaintext
 Project structure:-
 my_project/
 ├── docs/
@@ -52,13 +51,15 @@ my_project/
 │   ├── test/
 │   │    ├── scratch_pad.py.py
 │   │    └── generate_csv_data.py
-```
 
 How to run the program in Pycharm:-
 1. Open the pycharm editor.
 2. Upload or pull the project from GitHub.
 3. Open terminal from bottom pane.
-4. Goto virtual environment and activate it. Let's say you have venv as virtual environament.i) cd venv ii) cd Scripts iii) activate (if activate doesn't work then use ./activate)
+4. Goto virtual environment and activate it. Let's say you have venv as virtual environament.
+  i) cd venv 
+  ii) cd Scripts 
+  iii) activate (if activate doesn't work then use ./activate)
 5. You will have to create a user on AWS also and assign s3 full access and provide secret key and access key to the config file.
 6. Run main.py from green play button on top right hand side.
 7. If everything works as expected enjoy, else re-try.
